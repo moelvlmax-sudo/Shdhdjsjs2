@@ -398,20 +398,6 @@ export function createExpressApp() {
     }
   });
 
-  // Test MongoDB Atlas connection string live
-  apiRouter.post('/db/test-uri', async (req, res) => {
-    try {
-      const { uri } = req.body || {};
-      if (!uri || !uri.trim()) {
-        return res.status(400).json({ ok: false, error: 'Debe ingresar una URI de conexión para verificar.' });
-      }
-      const testResult = await dbService.testMongoConnection(uri);
-      res.json(testResult);
-    } catch (err: any) {
-      res.status(500).json({ ok: false, error: err?.message || 'Error al verificar conexión con MongoDB Atlas.' });
-    }
-  });
-
   // Admin dynamic Atlas URI connector
   apiRouter.post('/db/connect-uri', authenticateToken, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
     try {

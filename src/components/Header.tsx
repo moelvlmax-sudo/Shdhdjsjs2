@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Shield, ShieldCheck, User as UserIcon, LogOut, PlusCircle, Newspaper, Download, Database } from 'lucide-react';
+import { Search, Shield, ShieldCheck, User as UserIcon, LogOut, PlusCircle, Newspaper, Download } from 'lucide-react';
 import { Category, User, DbStatusInfo } from '../types';
 
 interface HeaderProps {
@@ -13,7 +13,6 @@ interface HeaderProps {
   onOpenAdminPanel: (articleToEdit?: any) => void;
   dbStatus?: DbStatusInfo | null;
   onRefreshDbStatus?: () => void;
-  onOpenDbModal?: () => void;
 }
 
 const CATEGORIES: Category[] = [
@@ -38,7 +37,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdminPanel,
   dbStatus,
   onRefreshDbStatus,
-  onOpenDbModal,
 }) => {
   const currentDate = new Date().toLocaleDateString('es-ES', {
     weekday: 'long',
@@ -46,8 +44,6 @@ export const Header: React.FC<HeaderProps> = ({
     month: 'long',
     day: 'numeric',
   });
-
-  const isDbConnected = dbStatus?.connected === true && dbStatus?.type === 'mongo_atlas';
 
   return (
     <header id="header-main" className="border-b border-stone-200 bg-[#fcfbf9] sticky top-0 z-30 shadow-xs">
@@ -62,26 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden md:inline text-emerald-800 font-medium">☀️ 22°C Despejado</span>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Database status pill */}
-            {onOpenDbModal && (
-              <button
-                id="btn-open-db-status"
-                onClick={onOpenDbModal}
-                title="Ver estado de MongoDB Atlas y almacenamiento de datos"
-                className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors cursor-pointer ${
-                  isDbConnected
-                    ? 'bg-emerald-100/80 hover:bg-emerald-200 text-emerald-900 border-emerald-300'
-                    : 'bg-amber-100/80 hover:bg-amber-200 text-amber-950 border-amber-300'
-                }`}
-              >
-                <Database className="w-3 h-3 shrink-0" />
-                <span className="hidden sm:inline">
-                  {isDbConnected ? 'Atlas Conectado' : 'BD Local'}
-                </span>
-                <span className={`w-1.5 h-1.5 rounded-full ${isDbConnected ? 'bg-emerald-600 animate-pulse' : 'bg-amber-600'}`}></span>
-              </button>
-            )}
+          <div className="flex items-center gap-3">
 
             {/* Download project ZIP */}
             <a

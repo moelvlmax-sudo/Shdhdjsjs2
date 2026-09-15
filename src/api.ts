@@ -239,18 +239,6 @@ export async function likeArticleApi(articleId: string): Promise<number> {
   return data.likes || 0;
 }
 
-export async function testMongoAtlasUriApi(uri: string): Promise<{ ok: boolean; message: string }> {
-  return await safeRequest<{ ok: boolean; message: string }>(
-    '/api/db/test-uri',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uri }),
-    },
-    'Error al comprobar la conexión con MongoDB Atlas'
-  );
-}
-
 export async function connectMongoAtlasUriApi(uri: string): Promise<{ success: boolean; status: DbStatusInfo }> {
   return await safeRequest<{ success: boolean; status: DbStatusInfo }>(
     '/api/db/connect-uri',

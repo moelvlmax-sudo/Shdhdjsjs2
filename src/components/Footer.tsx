@@ -7,7 +7,6 @@ interface FooterProps {
   onOpenAdminPanel?: () => void;
   isAdmin: boolean;
   dbStatus?: any;
-  onOpenDbModal?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -15,7 +14,6 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenAdminPanel,
   isAdmin,
   dbStatus,
-  onOpenDbModal,
 }) => {
   return (
     <footer id="footer-main" className="border-t-4 border-stone-900 bg-stone-950 text-stone-300 pt-12 pb-8 mt-12">
@@ -105,14 +103,6 @@ export const Footer: React.FC<FooterProps> = ({
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-500">
           <p>© 2026 Los Internacionalitos. Todos los derechos reservados.</p>
           <div className="flex items-center gap-4 text-xs">
-            {onOpenDbModal && (
-              <button
-                onClick={onOpenDbModal}
-                className="hover:text-stone-300 underline underline-offset-2 transition-colors cursor-pointer"
-              >
-                Base de Datos & MongoDB Atlas
-              </button>
-            )}
             <span>Privacidad</span>
             <span>Términos de Servicio</span>
             <span>Contacto</span>

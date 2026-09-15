@@ -534,39 +534,6 @@ class DatabaseService {
     return this.tryConnectMongo();
   }
 
-  public async testMongoConnection(testUri: string): Promise<{ ok: boolean; message: string }> {
-    const cleanUri = testUri.trim();
-    if (!cleanUri.startsWith('mongodb://') && !cleanUri.startsWith('mongodb+srv://')) {
-      return {
-        ok: false,
-        message: 'La cadena de conexión debe comenzar con "mongodb+srv://" o "mongodb://". Verifique que no haya ingresado únicamente la contraseña.'
-      };
-    }
-
-    let client: MongoClient | null = null;
-    try {
-      client = new MongoClient(cleanUri, {
-        serverSelectionTimeoutMS: 6000,
-        connectTimeoutMS: 6000,
-      });
-      await client.connect();
-      await client.db('los_internacionalitos').command({ ping: 1 });
-      await client.close();
-      return {
-        ok: true,
-        message: '¡Conexión exitosa! MongoDB Atlas respondió correctamente.'
-      };
-    } catch (err: any) {
-      if (client) {
-        try { await client.close(); } catch {}
-      }
-      return {
-        ok: false,
-        message: `Error al conectar con MongoDB Atlas: ${err.message}`
-      };
-    }
-  }
-
   public async getDbStatus(): Promise<DbStatusInfo> {
     let newsCount = this.localArticles.length;
     let usersCount = this.localUsers.length;
