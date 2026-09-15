@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   fetchNews, createArticleApi, updateArticleApi, deleteArticleApi, 
-  getStoredAuth, setStoredAuth, fetchDbStatus, triggerDbReconnect 
+  getStoredAuth, setStoredAuth, fetchDbStatus, triggerDbReconnect,
+  verifyCurrentSessionApi
 } from './api';
 import { Article, Category, User, DbStatusInfo } from './types';
 import { Header } from './components/Header';
@@ -73,27 +74,17 @@ export default function App() {
     loadNews('Todas', '');
     loadDbStatus();
 
-    // Verify existing session on app load
+    // Verify existing session safely on app load
     const { token } = getStoredAuth();
     if (token) {
-      fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => {
-          if (res.ok) return res.json();
-          throw new Error('Sesión expirada');
-        })
-        .then((data) => {
-          if (data.user) {
-            setUser(data.user);
-            setStoredAuth(data.user, token);
-          }
-        })
-        .catch(() => {
-          // Token expired or invalid, clear stale session
+      verifyCurrentSessionApi().then((validUser) => {
+        if (validUser) {
+          setUser(validUser);
+        } else {
           setStoredAuth(null, null);
           setUser(null);
-        });
+        }
+      });
     }
   }, []);
 

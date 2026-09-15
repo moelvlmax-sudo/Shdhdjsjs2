@@ -30,7 +30,7 @@ export function setStoredAuth(user: User | null, token: string | null) {
 
 function getAuthHeaders(): HeadersInit {
   const { token } = getStoredAuth();
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   if (token) {
@@ -39,80 +39,132 @@ function getAuthHeaders(): HeadersInit {
   return headers;
 }
 
+// Universal safe HTTP request helper to guarantee no JSON parse crashes (e.g., HTML 404/500 errors)
+async function safeRequest<T>(url: string, options?: RequestInit, defaultErrMsg = 'Error de comunicación con el servidor'): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, options);
+  } catch (netErr: any) {
+    throw new Error(`Error de red: no se pudo conectar con el servidor (${netErr?.message || 'Verifique su conexión'}).`);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.toLowerCase().includes('application/json');
+
+  if (isJson) {
+    try {
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || defaultErrMsg);
+      }
+      return data as T;
+    } catch (err: any) {
+      if (!res.ok) {
+        throw new Error(defaultErrMsg);
+      }
+      throw err;
+    }
+  }
+
+  // Handle non-JSON responses (such as Vercel HTML 404/500 error pages)
+  const rawText = await res.text().catch(() => '');
+  if (res.status === 404) {
+    throw new Error(`El endpoint ${url} no fue encontrado (404). Si estás en Vercel, asegúrate de haber configurado el backend en vercel.json.`);
+  }
+
+  if (!res.ok) {
+    const cleanText = rawText.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+    throw new Error(cleanText || `Error ${res.status}: ${defaultErrMsg}`);
+  }
+
+  throw new Error('La respuesta del servidor no tiene un formato JSON válido.');
+}
+
+export async function verifyCurrentSessionApi(): Promise<User | null> {
+  const { token } = getStoredAuth();
+  if (!token) return null;
+
+  try {
+    const data = await safeRequest<{ user: User }>('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return data.user || null;
+  } catch (err) {
+    console.warn('Session verification failed or expired:', err);
+    return null;
+  }
+}
+
 export async function fetchNews(category?: string, search?: string): Promise<Article[]> {
   const params = new URLSearchParams();
   if (category && category !== 'Todas') params.append('category', category);
   if (search && search.trim()) params.append('search', search.trim());
 
-  const res = await fetch(`/api/news?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error('Error al cargar las noticias');
-  }
-  const data = await res.json();
+  const data = await safeRequest<{ articles: Article[] }>(
+    `/api/news?${params.toString()}`,
+    undefined,
+    'Error al cargar las noticias'
+  );
   return data.articles || [];
 }
 
 export async function fetchArticleById(id: string): Promise<Article> {
-  const res = await fetch(`/api/news/${id}`);
-  if (!res.ok) {
-    throw new Error('No se pudo encontrar la noticia');
-  }
-  const data = await res.json();
+  const data = await safeRequest<{ article: Article }>(
+    `/api/news/${id}`,
+    undefined,
+    'No se pudo encontrar la noticia'
+  );
   return data.article;
 }
 
 export async function createArticleApi(articleData: Partial<Article>): Promise<Article> {
-  const res = await fetch('/api/news', {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(articleData),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al publicar la noticia');
-  }
+  const data = await safeRequest<{ article: Article }>(
+    '/api/news',
+    {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(articleData),
+    },
+    'Error al publicar la noticia'
+  );
   return data.article;
 }
 
 export async function updateArticleApi(id: string, updates: Partial<Article>): Promise<Article> {
-  const res = await fetch(`/api/news/${id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(updates),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al actualizar la noticia');
-  }
+  const data = await safeRequest<{ article: Article }>(
+    `/api/news/${id}`,
+    {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+    },
+    'Error al actualizar la noticia'
+  );
   return data.article;
 }
 
 export async function deleteArticleApi(id: string): Promise<boolean> {
-  const res = await fetch(`/api/news/${id}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al eliminar la noticia');
-  }
+  await safeRequest<{ success: boolean }>(
+    `/api/news/${id}`,
+    {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    },
+    'Error al eliminar la noticia'
+  );
   return true;
 }
 
 export async function loginApi(email: string, password: string): Promise<{ user: User; token: string }> {
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error en las credenciales');
-  }
+  const data = await safeRequest<{ user: User; token: string }>(
+    '/api/auth/login',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    },
+    'Error en las credenciales'
+  );
   setStoredAuth(data.user, data.token);
   return data;
 }
@@ -124,98 +176,102 @@ export async function registerApi(payload: {
   role?: 'admin' | 'reader';
   adminCode?: string;
 }): Promise<{ user: User; token: string }> {
-  const res = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al registrar usuario');
-  }
+  const data = await safeRequest<{ user: User; token: string }>(
+    '/api/auth/register',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    'Error al registrar usuario'
+  );
   setStoredAuth(data.user, data.token);
   return data;
 }
 
 export async function fetchDbStatus(): Promise<DbStatusInfo> {
-  const res = await fetch('/api/db/status');
-  if (!res.ok) {
-    throw new Error('Error al obtener estado de base de datos');
-  }
-  return res.json();
+  return await safeRequest<DbStatusInfo>(
+    '/api/db/status',
+    undefined,
+    'Error al obtener estado de base de datos'
+  );
 }
 
 export async function triggerDbReconnect(): Promise<{ success: boolean; status: DbStatusInfo }> {
-  const res = await fetch('/api/db/reconnect', { method: 'POST' });
-  return res.json();
+  return await safeRequest<{ success: boolean; status: DbStatusInfo }>(
+    '/api/db/reconnect',
+    { method: 'POST' },
+    'Error al intentar reconectar'
+  );
 }
 
 export async function addCommentApi(articleId: string, content: string): Promise<any> {
-  const res = await fetch(`/api/news/${articleId}/comments`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ content }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al enviar el comentario');
-  }
+  const data = await safeRequest<{ comment: any }>(
+    `/api/news/${articleId}/comments`,
+    {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ content }),
+    },
+    'Error al enviar el comentario'
+  );
   return data.comment;
 }
 
 export async function deleteCommentApi(articleId: string, commentId: string): Promise<boolean> {
-  const res = await fetch(`/api/news/${articleId}/comments/${commentId}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al eliminar el comentario');
-  }
+  await safeRequest<{ success: boolean }>(
+    `/api/news/${articleId}/comments/${commentId}`,
+    {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    },
+    'Error al eliminar el comentario'
+  );
   return true;
 }
 
 export async function likeArticleApi(articleId: string): Promise<number> {
-  const res = await fetch(`/api/news/${articleId}/like`, { method: 'POST' });
-  const data = await res.json();
+  const data = await safeRequest<{ likes: number }>(
+    `/api/news/${articleId}/like`,
+    { method: 'POST' },
+    'Error al registrar me gusta'
+  );
   return data.likes || 0;
 }
 
 export async function connectMongoAtlasUriApi(uri: string): Promise<{ success: boolean; status: DbStatusInfo }> {
-  const res = await fetch('/api/db/connect-uri', {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ uri }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al conectar con MongoDB Atlas');
-  }
-  return data;
+  return await safeRequest<{ success: boolean; status: DbStatusInfo }>(
+    '/api/db/connect-uri',
+    {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ uri }),
+    },
+    'Error al conectar con MongoDB Atlas'
+  );
 }
 
 export async function fetchUsersApi(): Promise<User[]> {
-  const res = await fetch('/api/users', {
-    headers: getAuthHeaders(),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al obtener lista de usuarios');
-  }
+  const data = await safeRequest<{ users: User[] }>(
+    '/api/users',
+    {
+      headers: getAuthHeaders(),
+    },
+    'Error al obtener lista de usuarios'
+  );
   return data.users || [];
 }
 
 export async function updateUserRoleApi(userId: string, role: 'admin' | 'reader'): Promise<User> {
-  const res = await fetch(`/api/users/${userId}/role`, {
-    method: 'PATCH',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ role }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Error al actualizar el rol del usuario');
-  }
+  const data = await safeRequest<{ user: User }>(
+    `/api/users/${userId}/role`,
+    {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ role }),
+    },
+    'Error al actualizar el rol del usuario'
+  );
   return data.user;
 }
 

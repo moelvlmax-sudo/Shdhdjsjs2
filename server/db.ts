@@ -9,8 +9,19 @@ export interface StoredUser extends User {
   passwordHash: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+function getStoragePaths() {
+  const defaultDir = path.join(process.cwd(), 'data');
+  const defaultFile = path.join(defaultDir, 'db.json');
+  
+  // If running in Vercel or /var/task serverless environment
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const tmpDir = path.join('/tmp', 'data');
+    const tmpFile = path.join(tmpDir, 'db.json');
+    return { dir: tmpDir, file: tmpFile, seedFile: defaultFile };
+  }
+  
+  return { dir: defaultDir, file: defaultFile, seedFile: defaultFile };
+}
 
 // Helper for secure password hashing
 export function hashPassword(password: string): string {
@@ -47,12 +58,24 @@ class DatabaseService {
 
   private initLocalStorage() {
     try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+      const { dir, file, seedFile } = getStoragePaths();
+
+      if (!fs.existsSync(dir)) {
+        try {
+          fs.mkdirSync(dir, { recursive: true });
+        } catch {
+          // In case dir creation fails in restricted runtime
+        }
       }
 
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      let raw: string | null = null;
+      if (fs.existsSync(file)) {
+        raw = fs.readFileSync(file, 'utf-8');
+      } else if (fs.existsSync(seedFile)) {
+        raw = fs.readFileSync(seedFile, 'utf-8');
+      }
+
+      if (raw) {
         const parsed = JSON.parse(raw);
         this.localArticles = parsed.articles || [];
         
@@ -86,16 +109,21 @@ class DatabaseService {
 
   private saveLocalStorage() {
     try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+      const { dir, file } = getStoragePaths();
+      if (!fs.existsSync(dir)) {
+        try {
+          fs.mkdirSync(dir, { recursive: true });
+        } catch {
+          // ignore
+        }
       }
       fs.writeFileSync(
-        DB_FILE,
+        file,
         JSON.stringify({ articles: this.localArticles, users: this.localUsers }, null, 2),
         'utf-8'
       );
     } catch (err) {
-      console.error('Error saving to local storage:', err);
+      console.warn('Storage write skipped or non-critical error:', err);
     }
   }
 
