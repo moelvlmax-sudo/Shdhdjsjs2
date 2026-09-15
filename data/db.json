@@ -104,6 +104,22 @@
       "passwordHash": "56dab00f28354197c1193d27457b82ff19c8481ee71a82c083034be8f5df075346475d2b1f1acfa98d9ba22837896e05b50ad5227de3a727de516e75d24f399b",
       "role": "superadmin",
       "createdAt": "2026-09-15T05:01:22.557Z"
+    },
+    {
+      "id": "user-1789487463488",
+      "name": "Prueba Lector",
+      "email": "test1789487463372@example.com",
+      "passwordHash": "55e501a29698ad99d863f11a97c3a829cf0d66404fcdd0e07b9e80b0370c956580945dfeadae0b0b4583ece8d3a946931a029d9ca0c7f7a003c083b1cc8fb948",
+      "role": "reader",
+      "createdAt": "2026-09-15T15:51:03.528Z"
+    },
+    {
+      "id": "user-1789487762104",
+      "name": "Tester User",
+      "email": "test_user_unique_123@noticiero.com",
+      "passwordHash": "55e501a29698ad99d863f11a97c3a829cf0d66404fcdd0e07b9e80b0370c956580945dfeadae0b0b4583ece8d3a946931a029d9ca0c7f7a003c083b1cc8fb948",
+      "role": "reader",
+      "createdAt": "2026-09-15T15:56:02.141Z"
     }
   ]
 }

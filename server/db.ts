@@ -133,7 +133,14 @@ class DatabaseService {
     const mongoUri = process.env.MONGODB_URI?.trim();
     if (!mongoUri) {
       this.isConnectedToMongo = false;
-      this.mongoStatusMessage = 'Modo Local activo. Para conectar con MongoDB Atlas, define MONGODB_URI en Variables de Entorno.';
+      this.mongoStatusMessage = 'Modo Local activo. Para conectar con MongoDB Atlas, define MONGODB_URI en las Variables de Entorno o usa el panel de base de datos.';
+      return false;
+    }
+
+    if (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://')) {
+      this.isConnectedToMongo = false;
+      this.mongoStatusMessage = `Formato de URI incorrecto: La cadena debe comenzar con "mongodb+srv://" o "mongodb://". El valor actual ("${mongoUri.length > 8 ? mongoUri.slice(0, 4) + '...' + mongoUri.slice(-3) : mongoUri}") parece ser solo la contraseña en lugar de la URI completa de conexión.`;
+      console.warn('Formato de MONGODB_URI inválido:', this.mongoStatusMessage);
       return false;
     }
 
@@ -525,6 +532,39 @@ class DatabaseService {
   public async updateMongoUri(newUri: string): Promise<boolean> {
     process.env.MONGODB_URI = newUri.trim();
     return this.tryConnectMongo();
+  }
+
+  public async testMongoConnection(testUri: string): Promise<{ ok: boolean; message: string }> {
+    const cleanUri = testUri.trim();
+    if (!cleanUri.startsWith('mongodb://') && !cleanUri.startsWith('mongodb+srv://')) {
+      return {
+        ok: false,
+        message: 'La cadena de conexión debe comenzar con "mongodb+srv://" o "mongodb://". Verifique que no haya ingresado únicamente la contraseña.'
+      };
+    }
+
+    let client: MongoClient | null = null;
+    try {
+      client = new MongoClient(cleanUri, {
+        serverSelectionTimeoutMS: 6000,
+        connectTimeoutMS: 6000,
+      });
+      await client.connect();
+      await client.db('los_internacionalitos').command({ ping: 1 });
+      await client.close();
+      return {
+        ok: true,
+        message: '¡Conexión exitosa! MongoDB Atlas respondió correctamente.'
+      };
+    } catch (err: any) {
+      if (client) {
+        try { await client.close(); } catch {}
+      }
+      return {
+        ok: false,
+        message: `Error al conectar con MongoDB Atlas: ${err.message}`
+      };
+    }
   }
 
   public async getDbStatus(): Promise<DbStatusInfo> {

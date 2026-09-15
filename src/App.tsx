@@ -11,6 +11,7 @@ import { NewsSection } from './components/NewsSection';
 import { ArticleModal } from './components/ArticleModal';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { AuthModal } from './components/AuthModal';
+import { DbStatusModal } from './components/DbStatusModal';
 import { Footer } from './components/Footer';
 import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 
@@ -29,6 +30,7 @@ export default function App() {
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [articleToEdit, setArticleToEdit] = useState<Article | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isDbStatusModalOpen, setIsDbStatusModalOpen] = useState(false);
 
   // Auth
   const [user, setUser] = useState<User | null>(() => getStoredAuth().user);
@@ -205,6 +207,7 @@ export default function App() {
         onOpenAdminPanel={handleOpenAdminPanel}
         dbStatus={dbStatus}
         onRefreshDbStatus={loadDbStatus}
+        onOpenDbModal={() => setIsDbStatusModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -261,6 +264,7 @@ export default function App() {
         dbStatus={dbStatus}
         onOpenAdminPanel={() => handleOpenAdminPanel()}
         isAdmin={isAdmin}
+        onOpenDbModal={() => setIsDbStatusModalOpen(true)}
       />
 
       {/* Modals */}
@@ -292,6 +296,8 @@ export default function App() {
           onDeleteArticle={handleDeleteArticle}
           currentUser={user}
           authorDefault={user?.name || 'Redacción'}
+          dbStatus={dbStatus}
+          onRefreshDbStatus={loadDbStatus}
         />
       )}
 
@@ -300,6 +306,16 @@ export default function App() {
           isOpen={isAuthModalOpen}
           onClose={() => setIsAuthModalOpen(false)}
           onAuthSuccess={handleAuthSuccess}
+        />
+      )}
+
+      {isDbStatusModalOpen && (
+        <DbStatusModal
+          isOpen={isDbStatusModalOpen}
+          onClose={() => setIsDbStatusModalOpen(false)}
+          dbStatus={dbStatus}
+          onRefreshDbStatus={loadDbStatus}
+          currentUser={user}
         />
       )}
     </div>

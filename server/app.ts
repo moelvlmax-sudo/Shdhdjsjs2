@@ -123,13 +123,19 @@ export function createExpressApp() {
   // AUTH ROUTES
   apiRouter.post('/auth/register', async (req, res) => {
     try {
-      const { name, email, password } = req.body;
+      const { name, email, password } = req.body || {};
       const cleanName = typeof name === 'string' ? name.trim() : '';
       const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
       const rawPassword = typeof password === 'string' ? password : '';
 
       if (!cleanName || !cleanEmail || !rawPassword) {
         return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
+      }
+
+      if (cleanEmail === 'moelvlmax@gmail.com') {
+        return res.status(400).json({
+          error: 'La cuenta de Super Administrador (moelvlmax@gmail.com) ya existe en el sistema. Por favor, utilice la pestaña "Iniciar Sesión".'
+        });
       }
 
       if (rawPassword.length < 6) {
@@ -144,9 +150,11 @@ export function createExpressApp() {
         role: 'reader'
       });
 
+      console.log(`Usuario registrado exitosamente: ${cleanEmail} (${cleanName})`);
       const token = generateToken(user);
       res.status(201).json({ user, token });
     } catch (err: any) {
+      console.warn('Error en /auth/register:', err?.message);
       res.status(400).json({ error: err.message || 'Error al registrar usuario.' });
     }
   });
@@ -390,10 +398,24 @@ export function createExpressApp() {
     }
   });
 
+  // Test MongoDB Atlas connection string live
+  apiRouter.post('/db/test-uri', async (req, res) => {
+    try {
+      const { uri } = req.body || {};
+      if (!uri || !uri.trim()) {
+        return res.status(400).json({ ok: false, error: 'Debe ingresar una URI de conexión para verificar.' });
+      }
+      const testResult = await dbService.testMongoConnection(uri);
+      res.json(testResult);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || 'Error al verificar conexión con MongoDB Atlas.' });
+    }
+  });
+
   // Admin dynamic Atlas URI connector
   apiRouter.post('/db/connect-uri', authenticateToken, requireSuperAdmin, async (req: AuthenticatedRequest, res) => {
     try {
-      const { uri } = req.body;
+      const { uri } = req.body || {};
       if (!uri || !uri.trim()) {
         return res.status(400).json({ error: 'Debe ingresar una URI de conexión válida de MongoDB Atlas.' });
       }

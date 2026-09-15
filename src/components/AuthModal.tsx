@@ -160,9 +160,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
         {/* Form Body */}
         <div className="p-6">
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-800 text-xs px-3 py-2 rounded-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-800 text-xs p-3 rounded-xs space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                <span className="leading-relaxed">{error}</span>
+              </div>
+              {error.toLowerCase().includes('ya está registrado') && (
+                <div className="pt-1 border-t border-red-200/60 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginEmail(registerEmail);
+                      setTab('login');
+                      setError('');
+                    }}
+                    className="bg-red-800 hover:bg-red-900 text-white font-bold text-[11px] px-2.5 py-1 rounded-xs transition-colors cursor-pointer"
+                  >
+                    Ir a Iniciar Sesión con este correo →
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
