@@ -88,6 +88,28 @@ export default function App() {
     }
   }, []);
 
+  // Automatically poll DB status every 3.5s until MongoDB Atlas is connected
+  useEffect(() => {
+    if (dbStatus?.connected && dbStatus?.type === 'mongo_atlas') {
+      return;
+    }
+
+    const timer = setInterval(async () => {
+      try {
+        const status = await fetchDbStatus();
+        setDbStatus(status);
+        // When it connects, reload news to fetch latest Atlas data
+        if (status.connected && status.type === 'mongo_atlas') {
+          loadNews();
+        }
+      } catch {
+        // silent
+      }
+    }, 3500);
+
+    return () => clearInterval(timer);
+  }, [dbStatus?.connected, dbStatus?.type]);
+
   // Handle category change
   const handleSelectCategory = (cat: Category) => {
     setCurrentCategory(cat);

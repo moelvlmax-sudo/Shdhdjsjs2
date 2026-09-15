@@ -120,6 +120,14 @@
       "passwordHash": "55e501a29698ad99d863f11a97c3a829cf0d66404fcdd0e07b9e80b0370c956580945dfeadae0b0b4583ece8d3a946931a029d9ca0c7f7a003c083b1cc8fb948",
       "role": "reader",
       "createdAt": "2026-09-15T15:56:02.141Z"
+    },
+    {
+      "id": "user-1789489594173",
+      "name": "Test Reader",
+      "email": "testreader_auto@example.com",
+      "passwordHash": "55e501a29698ad99d863f11a97c3a829cf0d66404fcdd0e07b9e80b0370c956580945dfeadae0b0b4583ece8d3a946931a029d9ca0c7f7a003c083b1cc8fb948",
+      "role": "reader",
+      "createdAt": "2026-09-15T16:26:34.211Z"
     }
   ]
 }

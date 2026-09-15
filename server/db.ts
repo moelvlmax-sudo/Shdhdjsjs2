@@ -47,15 +47,21 @@ class DatabaseService {
   private mongoClient: MongoClient | null = null;
   private mongoDb: Db | null = null;
   private isConnectedToMongo = false;
-  private mongoStatusMessage = 'Iniciando conexión...';
+  private mongoStatusMessage = 'Iniciando conexión con MongoDB Atlas...';
   private localArticles: Article[] = [];
   private localUsers: StoredUser[] = [];
+  private isConnecting = false;
+  private connectionPromise: Promise<boolean> | null = null;
+  private autoRetryTimeout: NodeJS.Timeout | null = null;
+  private autoRetryInterval: NodeJS.Timeout | null = null;
+  private retryAttemptCount = 0;
 
   constructor() {
     this.initLocalStorage();
     this.tryConnectMongo().catch(err => {
-      console.warn('Mongo connection attempt caught in constructor:', err);
+      console.warn('Mongo initial connection attempt in constructor:', err?.message || err);
     });
+    this.startPeriodicHealthCheck();
   }
 
   private initLocalStorage() {
@@ -129,11 +135,11 @@ class DatabaseService {
     }
   }
 
-  public async tryConnectMongo(): Promise<boolean> {
+  public async tryConnectMongo(isAutoRetry = false): Promise<boolean> {
     const mongoUri = process.env.MONGODB_URI?.trim();
     if (!mongoUri) {
       this.isConnectedToMongo = false;
-      this.mongoStatusMessage = 'Modo Local activo. Para conectar con MongoDB Atlas, define MONGODB_URI en las Variables de Entorno o usa el panel de base de datos.';
+      this.mongoStatusMessage = 'Modo Local activo. Para conectar con MongoDB Atlas, define MONGODB_URI en las Variables de Entorno.';
       return false;
     }
 
@@ -144,37 +150,136 @@ class DatabaseService {
       return false;
     }
 
-    try {
-      if (this.mongoClient) {
-        try {
-          await this.mongoClient.close();
-        } catch {}
-      }
-
-      console.log('Intentando conectar con MongoDB Atlas...');
-      this.mongoClient = new MongoClient(mongoUri, {
-        serverSelectionTimeoutMS: 5000,
-        connectTimeoutMS: 5000,
-      });
-
-      await this.mongoClient.connect();
-      this.mongoDb = this.mongoClient.db('los_internacionalitos');
-      this.isConnectedToMongo = true;
-      this.mongoStatusMessage = 'Conectado exitosamente a MongoDB Atlas (Base de datos: los_internacionalitos)';
-      console.log('¡Conexión exitosa a MongoDB Atlas!');
-
-      // Seed Mongo if collections are empty
-      await this.seedMongoIfEmpty();
+    if (this.isConnectedToMongo && this.mongoDb) {
       return true;
-    } catch (err: any) {
-      console.warn('No se pudo conectar a MongoDB Atlas:', err.message);
-      this.isConnectedToMongo = false;
-      this.mongoStatusMessage = `Error de conexión a Mongo Atlas: ${err.message}. Operando en almacenamiento persistente local.`;
-      return false;
     }
+
+    if (this.isConnecting && this.connectionPromise) {
+      return this.connectionPromise;
+    }
+
+    this.isConnecting = true;
+    this.connectionPromise = (async () => {
+      try {
+        if (this.mongoClient) {
+          try {
+            await this.mongoClient.close();
+          } catch {}
+        }
+
+        console.log(`Intentando conectar con MongoDB Atlas (Timeout 20s, intento ${this.retryAttemptCount + 1})...`);
+        this.mongoClient = new MongoClient(mongoUri, {
+          serverSelectionTimeoutMS: 20000,
+          connectTimeoutMS: 20000,
+          socketTimeoutMS: 45000,
+          maxPoolSize: 10,
+          retryWrites: true,
+        });
+
+        await this.mongoClient.connect();
+        this.mongoDb = this.mongoClient.db('los_internacionalitos');
+        
+        // Quick verification command
+        await this.mongoDb.command({ ping: 1 });
+
+        this.isConnectedToMongo = true;
+        this.mongoStatusMessage = 'Conectado exitosamente a MongoDB Atlas (Base de datos: los_internacionalitos)';
+        this.retryAttemptCount = 0;
+        if (this.autoRetryTimeout) {
+          clearTimeout(this.autoRetryTimeout);
+          this.autoRetryTimeout = null;
+        }
+
+        console.log('¡Conexión exitosa y verificada con MongoDB Atlas!');
+
+        // Seed and synchronize local users/articles with MongoDB
+        await this.seedAndSyncMongo();
+        return true;
+      } catch (err: any) {
+        console.warn('No se pudo conectar a MongoDB Atlas:', err.message);
+        this.isConnectedToMongo = false;
+        this.mongoStatusMessage = `Error de conexión a Mongo Atlas: ${err.message}. Operando en almacenamiento persistente local (reintentando en segundo plano).`;
+        
+        // Schedule auto retry automatically
+        this.scheduleAutoRetry();
+        return false;
+      } finally {
+        this.isConnecting = false;
+        this.connectionPromise = null;
+      }
+    })();
+
+    return this.connectionPromise;
   }
 
-  private async seedMongoIfEmpty() {
+  private scheduleAutoRetry() {
+    if (this.isConnectedToMongo) return;
+    const mongoUri = process.env.MONGODB_URI?.trim();
+    if (!mongoUri || (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://'))) {
+      return;
+    }
+
+    if (this.autoRetryTimeout) {
+      clearTimeout(this.autoRetryTimeout);
+    }
+
+    this.retryAttemptCount++;
+    // Exponential backoff: 3s, 5s, 8s, 12s, max 15s
+    const delayMs = Math.min(3000 * Math.pow(1.4, Math.min(this.retryAttemptCount - 1, 4)), 15000);
+    console.log(`[MongoDB Auto-Retry] Reintentando conexión en ${Math.round(delayMs / 1000)}s automáticamente (intento ${this.retryAttemptCount})...`);
+
+    this.autoRetryTimeout = setTimeout(() => {
+      this.tryConnectMongo(true).catch(e => {
+        console.warn('[MongoDB Auto-Retry Error]:', e?.message);
+      });
+    }, delayMs);
+  }
+
+  private startPeriodicHealthCheck() {
+    if (this.autoRetryInterval) clearInterval(this.autoRetryInterval);
+    this.autoRetryInterval = setInterval(async () => {
+      const mongoUri = process.env.MONGODB_URI?.trim();
+      if (!mongoUri || (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://'))) {
+        return;
+      }
+
+      if (!this.isConnectedToMongo) {
+        console.log('[MongoDB Health] Verificando conexión en segundo plano...');
+        await this.tryConnectMongo(true);
+      } else if (this.mongoDb) {
+        try {
+          await this.mongoDb.command({ ping: 1 });
+        } catch (err: any) {
+          console.warn('[MongoDB Health] Ping fallido, reconectando:', err?.message);
+          this.isConnectedToMongo = false;
+          this.scheduleAutoRetry();
+        }
+      }
+    }, 20000);
+  }
+
+  public async ensureConnected(maxWaitMs = 3000): Promise<boolean> {
+    if (this.isConnectedToMongo) return true;
+    const mongoUri = process.env.MONGODB_URI?.trim();
+    if (!mongoUri || (!mongoUri.startsWith('mongodb://') && !mongoUri.startsWith('mongodb+srv://'))) {
+      return false;
+    }
+
+    if (this.connectionPromise) {
+      try {
+        const timeoutPromise = new Promise<boolean>(resolve => setTimeout(() => resolve(false), maxWaitMs));
+        return await Promise.race([this.connectionPromise, timeoutPromise]);
+      } catch {
+        return this.isConnectedToMongo;
+      }
+    }
+
+    // Trigger connection in background
+    this.tryConnectMongo().catch(() => {});
+    return this.isConnectedToMongo;
+  }
+
+  private async seedAndSyncMongo() {
     if (!this.mongoDb) return;
     try {
       const articlesCol = this.mongoDb.collection<Article>('articles');
@@ -183,16 +288,36 @@ class DatabaseService {
       const articlesCount = await articlesCol.countDocuments();
       if (articlesCount === 0) {
         console.log('Sembrando noticias iniciales en MongoDB Atlas...');
-        await articlesCol.insertMany(this.localArticles.length > 0 ? this.localArticles : initialArticles);
+        const toInsert = this.localArticles.length > 0 ? this.localArticles : initialArticles;
+        if (toInsert.length > 0) {
+          await articlesCol.insertMany(toInsert);
+        }
+      } else {
+        // Sync any local articles not yet in Mongo
+        for (const la of this.localArticles) {
+          const existsInMongo = await articlesCol.findOne({ id: la.id });
+          if (!existsInMongo) {
+            await articlesCol.insertOne({ ...la } as any);
+          }
+        }
+        // Fetch fresh list from Mongo to update local cache
+        const allArticles = await articlesCol.find({}).sort({ date: -1 }).toArray();
+        this.localArticles = allArticles.map(doc => {
+          const { _id, ...rest } = doc as any;
+          return rest as Article;
+        });
       }
 
       const usersCount = await usersCol.countDocuments();
       if (usersCount === 0) {
         console.log('Sembrando usuario superadmin inicial en MongoDB Atlas...');
-        await usersCol.insertMany(this.localUsers.length > 0 ? this.localUsers : [DEFAULT_SUPERADMIN]);
+        const toInsertUsers = this.localUsers.length > 0 ? this.localUsers : [DEFAULT_SUPERADMIN];
+        await usersCol.insertMany(toInsertUsers);
       } else {
         // Clean up legacy test accounts if present in Mongo
         await usersCol.deleteMany({ email: { $in: ['admin@losinternacionalitos.com', 'lector@losinternacionalitos.com'] } });
+        
+        // Ensure superadmin has correct credentials
         const existingSuper = await usersCol.findOne({ email: 'moelvlmax@gmail.com' });
         if (!existingSuper) {
           await usersCol.insertOne({ ...DEFAULT_SUPERADMIN } as any);
@@ -202,9 +327,28 @@ class DatabaseService {
             { $set: { role: 'superadmin', passwordHash: hashPassword('mediafire4w7') } }
           );
         }
+
+        // Sync any local registered users into Mongo Atlas
+        for (const lu of this.localUsers) {
+          if (lu.email === 'moelvlmax@gmail.com') continue;
+          const exists = await usersCol.findOne({ email: lu.email });
+          if (!exists) {
+            console.log(`Sincronizando usuario local a MongoDB Atlas: ${lu.email}`);
+            await usersCol.insertOne({ ...lu } as any);
+          }
+        }
+
+        // Fetch fresh list from Mongo to update local cache
+        const allUsers = await usersCol.find({}).toArray();
+        this.localUsers = allUsers.map(doc => {
+          const { _id, ...rest } = doc as any;
+          return rest as StoredUser;
+        });
       }
+
+      this.saveLocalStorage();
     } catch (err) {
-      console.error('Error sembrando datos en Mongo Atlas:', err);
+      console.error('Error sincronizando datos en Mongo Atlas:', err);
     }
   }
 
@@ -361,14 +505,24 @@ class DatabaseService {
   // Users API
   public async findUserByEmail(email: string): Promise<StoredUser | null> {
     const cleanEmail = email.toLowerCase().trim();
+    
+    // If not connected but MONGODB_URI is provided, give a brief moment to connect
+    if (!this.isConnectedToMongo && process.env.MONGODB_URI) {
+      await this.ensureConnected(1200);
+    }
+
     if (this.isConnectedToMongo && this.mongoDb) {
       try {
         const doc = await this.mongoDb.collection<StoredUser>('users').findOne({
           email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
         });
         if (doc) return doc;
-      } catch (err) {
-        console.warn('Fallback local para findUserByEmail:', err);
+      } catch (err: any) {
+        console.warn('Fallback local para findUserByEmail:', err?.message);
+        if (err?.name === 'MongoServerSelectionError' || err?.name === 'MongoNetworkError') {
+          this.isConnectedToMongo = false;
+          this.scheduleAutoRetry();
+        }
       }
     }
     const found = this.localUsers.find(u => u.email.toLowerCase().trim() === cleanEmail);
@@ -376,6 +530,11 @@ class DatabaseService {
   }
 
   public async createUser(data: { name: string; email: string; password: string; role?: 'admin' | 'reader' }): Promise<User> {
+    // If not connected but MONGODB_URI is provided, ensure connection or attempt quick connect
+    if (!this.isConnectedToMongo && process.env.MONGODB_URI) {
+      await this.ensureConnected(1500);
+    }
+
     const existing = await this.findUserByEmail(data.email);
     if (existing) {
       throw new Error('El correo electrónico ya está registrado.');
@@ -393,8 +552,12 @@ class DatabaseService {
     if (this.isConnectedToMongo && this.mongoDb) {
       try {
         await this.mongoDb.collection<StoredUser>('users').insertOne({ ...newUser } as any);
-      } catch (err) {
-        console.error('Error guardando usuario en Mongo:', err);
+      } catch (err: any) {
+        console.error('Error guardando usuario en Mongo (se guardará localmente):', err?.message);
+        if (err?.name === 'MongoServerSelectionError' || err?.name === 'MongoNetworkError') {
+          this.isConnectedToMongo = false;
+          this.scheduleAutoRetry();
+        }
       }
     }
 
