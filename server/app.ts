@@ -405,9 +405,13 @@ export function createExpressApp() {
     }
   });
 
-  // Mount API router under both /api and / so it works with any rewrite configuration
+  // Fallback 404 on API router (only for routes within /api)
+  apiRouter.use((req, res) => {
+    res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.originalUrl}` });
+  });
+
+  // Mount API router exclusively under /api
   app.use('/api', apiRouter);
-  app.use('/', apiRouter);
 
   // Global API 404 handler (ensures API calls always return clean JSON, NEVER HTML)
   app.use('/api/*', (req, res) => {

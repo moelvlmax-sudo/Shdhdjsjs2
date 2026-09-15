@@ -53,7 +53,9 @@ class DatabaseService {
 
   constructor() {
     this.initLocalStorage();
-    this.tryConnectMongo();
+    this.tryConnectMongo().catch(err => {
+      console.warn('Mongo connection attempt caught in constructor:', err);
+    });
   }
 
   private initLocalStorage() {
